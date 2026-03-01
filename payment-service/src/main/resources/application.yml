@@ -1,0 +1,80 @@
+server:
+  port: 8083
+  shutdown: graceful
+
+spring:
+  application:
+    name: payment-service
+  datasource:
+    url: jdbc:postgresql://${POSTGRES_HOST:localhost}:${POSTGRES_PORT:5432}/${POSTGRES_DB:payment_db}
+    username: ${POSTGRES_USER:payment}
+    password: ${POSTGRES_PASSWORD:payment}
+    driver-class-name: org.postgresql.Driver
+  jpa:
+    hibernate:
+      ddl-auto: validate
+    show-sql: false
+    open-in-view: false
+  kafka:
+    bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS:localhost:9092}
+    producer:
+      key-serializer: org.apache.kafka.common.serialization.StringSerializer
+      value-serializer: org.apache.kafka.common.serialization.StringSerializer
+
+eureka:
+  client:
+    service-url:
+      defaultZone: ${EUREKA_URI:http://localhost:8761/eureka/}
+  instance:
+    prefer-ip-address: true
+
+app:
+  stripe:
+    secret-key: ${STRIPE_SECRET_KEY:}
+    webhook-secret: ${STRIPE_WEBHOOK_SECRET:}
+  paypal:
+    client-id: ${PAYPAL_CLIENT_ID:}
+  outbox:
+    relay-interval-ms: 5000
+  reconciliation:
+    cron: "0 0 2 * * ?"
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info
+  endpoint:
+    health:
+      show-details: when_authorized
+  health:
+    db:
+      enabled: true
+
+resilience4j:
+  circuitbreaker:
+    instances:
+      stripe:
+        register-health-indicator: true
+        sliding-window-size: 10
+        failure-rate-threshold: 50
+      paypal:
+        register-health-indicator: true
+        sliding-window-size: 10
+        failure-rate-threshold: 50
+  retry:
+    instances:
+      stripe:
+        max-attempts: 3
+      paypal:
+        max-attempts: 3
+
+springdoc:
+  api-docs:
+    path: /v3/api-docs
+  swagger-ui:
+    path: /swagger-ui.html
+
+logging:
+  pattern:
+    console: "%d{ISO8601} [%X{traceId:-},%X{spanId:-}] %-5level %logger{36} - %msg%n"

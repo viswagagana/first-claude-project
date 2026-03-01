@@ -1,0 +1,57 @@
+server:
+  port: 8081
+  shutdown: graceful
+
+spring:
+  application:
+    name: auth-service
+  datasource:
+    url: jdbc:postgresql://${POSTGRES_HOST:localhost}:${POSTGRES_PORT:5432}/${POSTGRES_DB:auth_db}
+    username: ${POSTGRES_USER:auth}
+    password: ${POSTGRES_PASSWORD:auth}
+    driver-class-name: org.postgresql.Driver
+  jpa:
+    hibernate:
+      ddl-auto: validate
+    show-sql: false
+    properties:
+      hibernate:
+        default_schema: public
+        format_sql: true
+    open-in-view: false
+
+eureka:
+  client:
+    service-url:
+      defaultZone: ${EUREKA_URI:http://localhost:8761/eureka/}
+  instance:
+    prefer-ip-address: true
+
+app:
+  jwt:
+    secret: ${JWT_SECRET:your-256-bit-secret-change-in-production-must-be-at-least-32-chars}
+    access-token-validity-ms: 900000
+    refresh-token-validity-ms: 604800000
+    issuer: payment-auth
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info
+  endpoint:
+    health:
+      show-details: when_authorized
+  health:
+    db:
+      enabled: true
+
+springdoc:
+  api-docs:
+    path: /v3/api-docs
+  swagger-ui:
+    path: /swagger-ui.html
+
+logging:
+  pattern:
+    console: "%d{ISO8601} [%X{traceId:-},%X{spanId:-}] %-5level %logger{36} - %msg%n"

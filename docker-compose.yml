@@ -1,0 +1,211 @@
+version: "3.8"
+
+services:
+  eureka:
+    build: ./eureka-server
+    ports:
+      - "8761:8761"
+    environment:
+      - EUREKA_INSTANCE_HOSTNAME=eureka
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8761/actuator/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+
+  postgres-auth:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: auth_db
+      POSTGRES_USER: auth
+      POSTGRES_PASSWORD: auth
+    ports:
+      - "5432:5432"
+    volumes:
+      - ./auth-service/db/schema.sql:/docker-entrypoint-initdb.d/01-schema.sql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U auth -d auth_db"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  postgres-account:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: account_db
+      POSTGRES_USER: account
+      POSTGRES_PASSWORD: account
+    ports:
+      - "5433:5432"
+    volumes:
+      - ./account-service/db/schema.sql:/docker-entrypoint-initdb.d/01-schema.sql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U account -d account_db"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  postgres-payment:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: payment_db
+      POSTGRES_USER: payment
+      POSTGRES_PASSWORD: payment
+    ports:
+      - "5434:5432"
+    volumes:
+      - ./payment-service/db/schema.sql:/docker-entrypoint-initdb.d/01-schema.sql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U payment -d payment_db"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  postgres-ledger:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: ledger_db
+      POSTGRES_USER: ledger
+      POSTGRES_PASSWORD: ledger
+    ports:
+      - "5435:5432"
+    volumes:
+      - ./ledger-service/db/schema.sql:/docker-entrypoint-initdb.d/01-schema.sql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ledger -d ledger_db"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  zookeeper:
+    image: confluentinc/cp-zookeeper:7.5.0
+    environment:
+      ZOOKEEPER_CLIENT_PORT: 2181
+      ZOOKEEPER_TICK_TIME: 2000
+    ports:
+      - "2181:2181"
+
+  kafka:
+    image: confluentinc/cp-kafka:7.5.0
+    depends_on:
+      - zookeeper
+    ports:
+      - "9092:9092"
+    environment:
+      KAFKA_BROKER_ID: 1
+      KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:29092,PLAINTEXT_HOST://localhost:9092
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT
+      KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
+    healthcheck:
+      test: ["CMD", "kafka-topics", "--bootstrap-server", "localhost:9092", "--list"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  mongodb:
+    image: mongo:7
+    ports:
+      - "27017:27017"
+    volumes:
+      - ./notification-service/db/init-mongo.js:/docker-entrypoint-initdb.d/init-mongo.js:ro
+    healthcheck:
+      test: ["CMD", "mongosh", "--eval", "db.adminCommand('ping')"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  zipkin:
+    image: openzipkin/zipkin:latest
+    ports:
+      - "9411:9411"
+
+  auth-service:
+    build: ./auth-service
+    depends_on:
+      postgres-auth:
+        condition: service_healthy
+      eureka:
+        condition: service_healthy
+    environment:
+      POSTGRES_HOST: postgres-auth
+      POSTGRES_PORT: 5432
+      POSTGRES_DB: auth_db
+      POSTGRES_USER: auth
+      POSTGRES_PASSWORD: auth
+      EUREKA_URI: http://eureka:8761/eureka/
+    ports:
+      - "8081:8081"
+
+  account-service:
+    build: ./account-service
+    depends_on:
+      postgres-account:
+        condition: service_healthy
+      eureka:
+        condition: service_healthy
+    environment:
+      POSTGRES_HOST: postgres-account
+      POSTGRES_PORT: 5432
+      POSTGRES_DB: account_db
+      POSTGRES_USER: account
+      POSTGRES_PASSWORD: account
+      EUREKA_URI: http://eureka:8761/eureka/
+    ports:
+      - "8082:8082"
+
+  payment-service:
+    build: ./payment-service
+    depends_on:
+      postgres-payment:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
+      eureka:
+        condition: service_healthy
+    environment:
+      POSTGRES_HOST: postgres-payment
+      POSTGRES_PORT: 5432
+      POSTGRES_DB: payment_db
+      POSTGRES_USER: payment
+      POSTGRES_PASSWORD: payment
+      KAFKA_BOOTSTRAP_SERVERS: kafka:29092
+      EUREKA_URI: http://eureka:8761/eureka/
+    ports:
+      - "8083:8083"
+
+  ledger-service:
+    build: ./ledger-service
+    depends_on:
+      postgres-ledger:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
+      eureka:
+        condition: service_healthy
+    environment:
+      POSTGRES_HOST: postgres-ledger
+      POSTGRES_PORT: 5432
+      POSTGRES_DB: ledger_db
+      POSTGRES_USER: ledger
+      POSTGRES_PASSWORD: ledger
+      KAFKA_BOOTSTRAP_SERVERS: kafka:29092
+      EUREKA_URI: http://eureka:8761/eureka/
+    ports:
+      - "8084:8084"
+
+  notification-service:
+    build: ./notification-service
+    depends_on:
+      mongodb:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
+      eureka:
+        condition: service_healthy
+    environment:
+      MONGODB_URI: mongodb://mongodb:27017/notification_db
+      KAFKA_BOOTSTRAP_SERVERS: kafka:29092
+      EUREKA_URI: http://eureka:8761/eureka/
+    ports:
+      - "8085:8085"
